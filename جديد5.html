@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>نظام إدارة الموظفين</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; direction: rtl; }
+    .container { max-width: 1000px; margin: auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 0 10px #ccc; }
+    h1 { text-align: center; color: #003366; }
+    input, button, select { margin: 10px 0; padding: 10px; font-size: 16px; width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #003366; color: white; }
+    .dropdown { position: relative; display: inline-block; width: 100%; }
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      background-color: #fff;
+      min-width: 250px;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+      z-index: 1;
+      border: 1px solid #ccc;
+    }
+    .dropdown-content label {
+      display: block;
+      padding: 8px;
+      cursor: pointer;
+    }
+    .dropdown:hover .dropdown-content {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>نظام إدارة بيانات الموظفين</h1>
+    <input type="file" id="excelFile" accept=".xlsx" />
+    <input type="text" id="searchInput" placeholder="ابحث بالاسم (E) أو المفرزة (R)" />
+    <button onclick="searchData()">🔍 بحث</button>
+
+    <div class="dropdown">
+      <button>📋 اختر الأعمدة للتصدير/الطباعة</button>
+      <div class="dropdown-content" id="columnSelector"></div>
+    </div>
+
+    <button onclick="exportToExcel()">📤 تصدير النتائج</button>
+    <button onclick="printSelected()">🖨️ طباعة</button>
+
+    <table id="resultsTable">
+      <thead>
+        <tr id="tableHeader"></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    let originalData = [];
+    let currentViewData = [];
+    let headers = [];
+
+    document.getElementById('excelFile').addEventListener('change', function(e) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        headers = json[0];
+        originalData = json.slice(1);
+        renderTable(originalData);
+        renderColumnSelector();
+      };
+      reader.readAsArrayBuffer(e.target.files[0]);
+    });
+
+    function renderTable(data) {
+      currentViewData = data;
+      const headerRow = document.getElementById('tableHeader');
+      const body = document.getElementById('tableBody');
+      headerRow.innerHTML = '';
+      body.innerHTML = '';
+
+      headers.forEach(h => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+      });
+      const th = document.createElement('th');
+      th.textContent = 'تعديل';
+      headerRow.appendChild(th);
+
+      data.forEach((row, rowIndex) => {
+        const tr = document.createElement('tr');
+        headers.forEach((_, colIndex) => {
+          const td = document.createElement('td');
+          td.contentEditable = true;
+          td.textContent = row[colIndex] || '';
+          tr.appendChild(td);
+        });
+        const actionTd = document.createElement('td');
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = '💾 حفظ';
+        saveBtn.onclick = () => saveRow(rowIndex, tr);
+        actionTd.appendChild(saveBtn);
+        tr.appendChild(actionTd);
+        body.appendChild(tr);
+      });
+    }
+
+    function searchData() {
+      const query = document.getElementById('searchInput').value.trim();
+      if (!query) return renderTable(originalData);
+      const filtered = originalData.filter(row =>
+        (row[4] && row[4].toString().includes(query)) || // العمود E = index 4
+        (row[17] && row[17].toString().includes(query))  // العمود R = index 17
+      );
+      renderTable(filtered);
+    }
+
+    function saveRow(index, tr) {
+      const cells = tr.querySelectorAll('td');
+      const updatedRow = [];
+      for (let i = 0; i < headers.length; i++) {
+        updatedRow.push(cells[i].textContent);
+      }
+      originalData[index] = updatedRow;
+      alert('✅ تم حفظ التعديلات');
+    }
+
+    function renderColumnSelector() {
+      const container = document.getElementById('columnSelector');
+      container.innerHTML = '';
+      headers.forEach((h, i) => {
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="checkbox" value="${i}" checked /> ${h}`;
+        container.appendChild(label);
+      });
+    }
+
+    function getSelectedColumns() {
+      const checkboxes = document.querySelectorAll('#columnSelector input[type="checkbox"]');
+      const selected = [];
+      checkboxes.forEach(cb => {
+        if (cb.checked) selected.push(parseInt(cb.value));
+      });
+      return selected;
+    }
+
+    function exportToExcel() {
+      const selectedCols = getSelectedColumns();
+      const table = document.createElement('table');
+      const thead = table.createTHead().insertRow();
+      selectedCols.forEach(i => {
+        const th = document.createElement('th');
+        th.textContent = headers[i];
+        thead.appendChild(th);
+      });
+
+      const tbody = table.createTBody();
+      currentViewData.forEach(row => {
+        const tr = tbody.insertRow();
+        selectedCols.forEach(i => {
+          const td = tr.insertCell();
+          td.textContent = row[i] || '';
+        });
+      });
+
+      const wb = XLSX.utils.table_to_book(table, { sheet: "نتائج البحث" });
+      XLSX.writeFile(wb, "نتائج_البحث.xlsx");
+    }
+
+    function printSelected() {
+      const selectedCols = getSelectedColumns();
+      let html = `<html><head><title>طباعة</title><style>table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px;text-align:center}</style></head><body><table><thead><tr>`;
+      selectedCols.forEach(i => {
+        html += `<th>${headers[i]}</th>`;
+      });
+      html += `</tr></thead><tbody>`;
+      currentViewData.forEach(row => {
+        html += `<tr>`;
+        selectedCols.forEach(i => {
+          html += `<td>${row[i] || ''}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</tbody></table></body></html>`;
+      const win = window.open('', '', 'width=900,height=600');
+      win.document.write(html);
+      win.document.close();
+      win.print();
+    }
+  </script>
+</body>
+</html>
